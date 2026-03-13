@@ -1,6 +1,6 @@
-# Alma 1 iCal Feed (Thursdays)
+# Alma 1 iCal Feed (Mon–Sat)
 
-This project builds and hosts a static iCal feed containing the Alma 1 restaurant menu for **Thursdays only**.
+This project builds and hosts a static iCal feed containing the Alma 1 restaurant menu for **every day except Sunday**.
 
 ## What it does
 - Scrapes the Alma 1 menu page for specific dates:
@@ -23,9 +23,9 @@ node scripts/build-ical.js
 Environment variables supported by `scripts/build-ical.js`:
 - `WEEKS_AHEAD` (default `12`)
 - `TIMEZONE` (default `Europe/Brussels`)
-- `WEEKDAY` (default `4` for Thursday)
+- `WEEKDAY` (default `1,2,3,4,5,6` for Mon–Sat; accepts comma-separated day numbers, 0=Sun)
 - `START_DATE` (optional `YYYY-MM-DD`)
-- `CALENDAR_NAME` (default `Alma 1 Menu (Thursdays)`)
+- `CALENDAR_NAME` (default `Alma 1 Menu`)
 
 ## Deployment
 GitHub Actions builds and deploys to Pages:
@@ -38,6 +38,6 @@ https://<your-username>.github.io/<repo-name>/alma.ics
 ```
 
 ## Notes for agents
-- Keep the feed Thursday‑only.
+- Keep the feed Mon–Sat (no Sundays).
 - Preserve `div.menucard` as the primary selector; fallback parsing exists for resilience.
 - Avoid heavy dependencies; the script is plain Node.js (Node 20 on CI).

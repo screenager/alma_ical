@@ -8,8 +8,10 @@ const CONFIG = {
   baseUrl: process.env.ALMA_BASE_URL || 'https://www.alma.be/nl/restaurants/alma-1',
   weeksAhead: Number(process.env.WEEKS_AHEAD || 12),
   timezone: process.env.TIMEZONE || 'Europe/Brussels',
-  weekday: Number(process.env.WEEKDAY || 4), // 0=Sun ... 4=Thu
-  calendarName: process.env.CALENDAR_NAME || 'Alma 1 Menu (Thursdays)'
+  // WEEKDAY can be a comma-separated list of day numbers (0=Sun … 6=Sat).
+  // Default: Mon–Sat (1–6). Single value still works for backward compat.
+  weekdays: (process.env.WEEKDAY || '1,2,3,4,5,6').split(',').map(Number),
+  calendarName: process.env.CALENDAR_NAME || 'Alma 1 Menu'
 };
 
 const OUTPUT_DIR = path.join(process.cwd(), 'public');
@@ -53,16 +55,17 @@ function addDaysUTC(date, days) {
   return next;
 }
 
-function getNextWeekdayDates(startYMD, weekday, count) {
+function getWeekdayDatesInRange(startYMD, weekdays, weeksAhead) {
   const dates = [];
-  let cursor = ymdToUTCDate(startYMD);
-  const currentWeekday = cursor.getUTCDay();
-  const offset = (weekday - currentWeekday + 7) % 7;
-  cursor = addDaysUTC(cursor, offset);
+  const start = ymdToUTCDate(startYMD);
+  const end = addDaysUTC(start, weeksAhead * 7);
+  let cursor = start;
 
-  for (let i = 0; i < count; i += 1) {
-    dates.push(utcDateToYMD(cursor));
-    cursor = addDaysUTC(cursor, 7);
+  while (cursor < end) {
+    if (weekdays.includes(cursor.getUTCDay())) {
+      dates.push(utcDateToYMD(cursor));
+    }
+    cursor = addDaysUTC(cursor, 1);
   }
 
   return dates;
@@ -337,7 +340,7 @@ async function fetchMenuForDate(ymd) {
   return {
     ymd,
     url,
-    description: unique.join('\n') + '\n\n' + url
+    description: unique.join('\n')
   };
 }
 
@@ -345,7 +348,7 @@ async function main() {
   try { fs.mkdirSync(OUTPUT_DIR); } catch (e) { if (e.code !== 'EEXIST') throw e; }
 
   const todayYMD = process.env.START_DATE || getTodayYMDInTimeZone(CONFIG.timezone);
-  const dates = getNextWeekdayDates(todayYMD, CONFIG.weekday, CONFIG.weeksAhead);
+  const dates = getWeekdayDatesInRange(todayYMD, CONFIG.weekdays, CONFIG.weeksAhead);
 
   const events = [];
   const seenDescriptions = new Set();
@@ -387,7 +390,7 @@ async function main() {
     generatedAt: new Date().toISOString(),
     timezone: CONFIG.timezone,
     weeksAhead: CONFIG.weeksAhead,
-    weekday: CONFIG.weekday,
+    weekdays: CONFIG.weekdays,
     dates
   };
 

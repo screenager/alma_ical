@@ -83,7 +83,8 @@ function decodeHtmlEntities(str) {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>');
+    .replace(/&gt;/g, '>')
+    .replace(/&euro;/g, '€');
 }
 
 function normalizeText(html) {
@@ -101,6 +102,65 @@ function normalizeText(html) {
     .replace(/\n\s+/g, '\n')
     .replace(/\n{2,}/g, '\n')
     .trim();
+}
+
+// Items whose name matches any of these keywords are excluded (snacks, drinks, desserts, etc.)
+const EXCLUDE_KEYWORDS = [
+  'soep', 'wrap', 'broodje', 'borek', 'flatbread', 'panini',
+  'salade', 'ontbijt', 'appel', 'sinaasappel', 'cake', 'mousse',
+  'pudding', 'muffin', 'brownie', 'wafel', 'snoep', 'bueno', 'leo go',
+  'aquarius', 'cola', 'fanta', 'sprite', 'fuze', 'minute maid',
+  'nalu', 'vit hit', 'baguette', 'ciabatta', 'fitness broodje',
+  'worstenbrood', 'geraspte kaas'
+];
+
+function isExcludedItem(text) {
+  const lower = text.toLowerCase();
+  return EXCLUDE_KEYWORDS.some(kw => lower.includes(kw));
+}
+
+// Remove lines that are purely price fragments (€X, .XX cents, "Gratis")
+function stripPrices(text) {
+  return text
+    .split('\n')
+    .filter(line => {
+      const t = line.trim();
+      return t
+        && !/^[€$]\d/.test(t)
+        && !/^\.\d+$/.test(t)
+        && !/^Gratis$/i.test(t);
+    })
+    .join('\n')
+    .trim();
+}
+
+// Slice the HTML by <h3> section headings and return menucard texts per section.
+// Returns null when no h3 headings are found.
+function extractMenusBySection(html) {
+  const h3Re = /<h3[^>]*>[\s\S]*?<\/h3>/gi;
+  const bounds = [];
+  let m;
+  while ((m = h3Re.exec(html)) !== null) {
+    const titleMatch = m[0].match(/<h3[^>]*>([\s\S]*?)<\/h3>/i);
+    bounds.push({
+      openPos: m.index,
+      closePos: m.index + m[0].length,
+      title: titleMatch ? normalizeText(titleMatch[1].replace(/<[^>]*>/g, '')) : ''
+    });
+  }
+  if (bounds.length === 0) return null;
+
+  const result = {};
+  for (let i = 0; i < bounds.length; i++) {
+    const start = bounds[i].closePos;
+    const end = i + 1 < bounds.length ? bounds[i + 1].openPos : html.length;
+    const cards = extractDivBlocksByClass(html.slice(start, end), 'menucard');
+    const texts = cards.map(c => normalizeText(c)).filter(Boolean);
+    if (texts.length > 0) {
+      result[bounds[i].title] = texts;
+    }
+  }
+  return result;
 }
 
 function extractDivBlocksByClass(html, className) {
@@ -191,19 +251,35 @@ function extractHeadingMenus(html) {
 }
 
 function extractMenus(html) {
+  // 1. Try section-based extraction: find the "Schotel" / warm buffet section
+  const sections = extractMenusBySection(html);
+  if (sections) {
+    const warmKey = Object.keys(sections).find(k => /schotel|warm|dagschotel|buffet/i.test(k));
+    if (warmKey) {
+      const items = sections[warmKey]
+        .map(stripPrices)
+        .filter(Boolean);
+      if (items.length > 0) return items;
+    }
+  }
+
+  // 2. Fallback: all menucards minus excluded categories, prices stripped
   const cardBlocks = extractDivBlocksByClass(html, 'menucard');
-  const cardTexts = cardBlocks.map(block => normalizeText(block)).filter(Boolean);
-
-  if (cardTexts.length > 0) {
-    return cardTexts;
+  if (cardBlocks.length > 0) {
+    const items = cardBlocks
+      .map(block => stripPrices(normalizeText(block)))
+      .filter(Boolean)
+      .filter(text => !isExcludedItem(text));
+    if (items.length > 0) return items;
   }
 
+  // 3. Last resort: heading-based extraction, filtered and stripped
   const headings = extractHeadingMenus(html);
-  if (headings.length > 0) {
-    return headings;
-  }
-
-  return [];
+  const filteredHeadings = headings
+    .map(stripPrices)
+    .filter(Boolean)
+    .filter(text => !isExcludedItem(text));
+  return filteredHeadings;
 }
 
 function buildIcsEvent({ ymd, description, url }) {
@@ -249,15 +325,24 @@ async function fetchMenuForDate(ymd) {
     };
   }
 
+  // Deduplicate (e.g. same dish listed twice with/without trailing dot)
+  const seen = new Set();
+  const unique = menus.filter(item => {
+    const key = item.toLowerCase().replace(/[.\s]+$/, '').trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
   return {
     ymd,
     url,
-    description: menus.join('\n\n')
+    description: unique.join('\n')
   };
 }
 
 async function main() {
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  try { fs.mkdirSync(OUTPUT_DIR); } catch (e) { if (e.code !== 'EEXIST') throw e; }
 
   const todayYMD = process.env.START_DATE || getTodayYMDInTimeZone(CONFIG.timezone);
   const dates = getNextWeekdayDates(todayYMD, CONFIG.weekday, CONFIG.weeksAhead);

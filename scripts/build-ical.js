@@ -337,7 +337,7 @@ async function fetchMenuForDate(ymd) {
   return {
     ymd,
     url,
-    description: unique.join('\n')
+    description: unique.join('\n') + '\n\n' + url
   };
 }
 

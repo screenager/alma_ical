@@ -107,7 +107,7 @@ function normalizeText(html) {
 // Items whose name matches any of these keywords are excluded (snacks, drinks, desserts, etc.)
 const EXCLUDE_KEYWORDS = [
   'soep', 'wrap', 'broodje', 'borek', 'flatbread', 'panini',
-  'salade', 'ontbijt', 'appel', 'sinaasappel', 'cake', 'mousse',
+  'salade', 'griekse bowl', 'ontbijt', 'appel', 'sinaasappel', 'cake', 'mousse',
   'pudding', 'muffin', 'brownie', 'wafel', 'snoep', 'bueno', 'leo go',
   'aquarius', 'cola', 'fanta', 'sprite', 'fuze', 'minute maid',
   'nalu', 'vit hit', 'baguette', 'ciabatta', 'fitness broodje',
@@ -348,17 +348,25 @@ async function main() {
   const dates = getNextWeekdayDates(todayYMD, CONFIG.weekday, CONFIG.weeksAhead);
 
   const events = [];
+  const seenDescriptions = new Set();
   for (const ymd of dates) {
     try {
       const menu = await fetchMenuForDate(ymd);
+      // Skip if empty (no relevant warm dish items found)
+      if (!menu.description) {
+        console.log(`Skipping ${ymd}: no warm dishes found`);
+        continue;
+      }
+      // Skip if identical to a previous week — alma.be returns the same
+      // generic permanent menu for all unpublished future dates.
+      if (seenDescriptions.has(menu.description)) {
+        console.log(`Skipping ${ymd}: duplicate of already-seen menu (not yet published)`);
+        continue;
+      }
+      seenDescriptions.add(menu.description);
       events.push(buildIcsEvent(menu));
     } catch (error) {
-      const fallback = buildIcsEvent({
-        ymd,
-        url: `${CONFIG.baseUrl}?date=${ymd}`,
-        description: `Menu kon niet worden opgehaald: ${error.message}`
-      });
-      events.push(fallback);
+      console.warn(`Could not fetch ${ymd}: ${error.message}`);
     }
   }
 

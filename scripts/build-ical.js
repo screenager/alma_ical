@@ -84,7 +84,7 @@ function decodeHtmlEntities(str) {
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
+    .replace(/&#0*39;/g, "'")
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&euro;/g, '€');
@@ -107,11 +107,14 @@ function normalizeText(html) {
     .trim();
 }
 
-// Items whose name matches any of these keywords are excluded (snacks, drinks, desserts, etc.)
+// Items whose name matches any of these keywords are excluded (snacks, drinks, desserts, etc.).
+// Entries may be strings (substring match) or RegExp (for cases where substring is too broad).
 const EXCLUDE_KEYWORDS = [
   'soep', 'wrap', 'broodje', 'borek', 'flatbread', 'panini',
-  'salade', 'griekse bowl', 'ontbijt', 'appel', 'sinaasappel', 'cake', 'mousse',
-  'pudding', 'muffin', 'brownie', 'wafel', 'snoep', 'bueno', 'leo go',
+  'salade', 'griekse bowl', 'ontbijt',
+  /\bappel\b/, // standalone apple snack — must NOT match 'appelmoes'
+  'sinaasappel', 'cake', 'mousse',
+  'pudding', 'muffin', 'brownie', /\bwafels?\b/, 'snoep', 'bueno', 'leo go',
   'aquarius', 'cola', 'fanta', 'sprite', 'fuze', 'minute maid',
   'nalu', 'vit hit', 'baguette', 'ciabatta', 'fitness broodje',
   'worstenbrood', 'geraspte kaas'
@@ -119,7 +122,9 @@ const EXCLUDE_KEYWORDS = [
 
 function isExcludedItem(text) {
   const lower = text.toLowerCase();
-  return EXCLUDE_KEYWORDS.some(kw => lower.includes(kw));
+  return EXCLUDE_KEYWORDS.some(kw =>
+    kw instanceof RegExp ? kw.test(lower) : lower.includes(kw)
+  );
 }
 
 // Remove lines that are purely price fragments (€X, .XX cents, "Gratis")
